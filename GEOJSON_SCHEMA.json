@@ -1,0 +1,107 @@
+{
+  "geojsonProperties": {
+    "description": "Room data structure used in the 3D indoor mapping application",
+    "properties": {
+      "id": {
+        "type": "string",
+        "description": "Unique identifier for the room",
+        "example": "room-001"
+      },
+      "name": {
+        "type": "string",
+        "description": "Primary room name",
+        "example": "Conference Room A"
+      },
+      "roomname": {
+        "type": "string",
+        "description": "Alternative room name field",
+        "example": "Meeting Space"
+      },
+      "tipo": {
+        "type": "string",
+        "description": "Portuguese room type",
+        "enum": [
+          "sala",
+          "banheiro",
+          "cozinha",
+          "quarto",
+          "escritório",
+          "corredor",
+          "elevador",
+          "escada"
+        ],
+        "example": "sala"
+      },
+      "type": {
+        "type": "string",
+        "description": "English room type",
+        "example": "conference room"
+      },
+      "number": {
+        "type": "string",
+        "description": "Room number or identifier",
+        "example": "101"
+      },
+      "floor": {
+        "type": "integer",
+        "description": "Floor level (-1 for basement, 0+ for above ground)",
+        "example": 1
+      },
+      "nivel": {
+        "type": "integer",
+        "description": "Alternative floor field (Portuguese)",
+        "example": 1
+      },
+      "altura": {
+        "type": "number",
+        "description": "Room height in meters (Portuguese)",
+        "example": 3.5
+      },
+      "height": {
+        "type": "number",
+        "description": "Room height in meters (English)",
+        "example": 3.5
+      },
+      "base_height": {
+        "type": "number",
+        "description": "Base elevation height in meters",
+        "example": 0.0
+      },
+      "area": {
+        "type": "string|number",
+        "description": "Room area in square meters",
+        "example": "45.5"
+      },
+      "description": {
+        "type": "string",
+        "description": "Additional room information",
+        "example": "Meeting space with AV capabilities"
+      }
+    },
+    "geometry": {
+      "type": "Polygon",
+      "description": "GeoJSON Polygon representing room boundary",
+      "coordinateSystem": "WGS84 (EPSG:4326)",
+      "coordinateOrder": "[longitude, latitude, altitude]",
+      "example": "[[-89.22, 37.71, 0], [...], [...]]"
+    },
+    "colorMapping": {
+      "sala": "Blue (100, 150, 255)",
+      "banheiro": "Green (100, 255, 150)",
+      "cozinha": "Orange (255, 200, 100)",
+      "quarto": "Purple (200, 100, 255)",
+      "escritório": "Light Blue (100, 200, 255)",
+      "corredor": "Gray (200, 200, 200)",
+      "elevador": "Red (255, 100, 100)",
+      "escada": "Orange-Red (255, 150, 100)",
+      "selected": "Gold (255, 200, 0)"
+    },
+    "notes": {
+      "coordinate_system": "All coordinates must be in WGS84 (EPSG:4326) format",
+      "property_names": "The application supports both Portuguese and English property names for flexibility",
+      "floor_levels": "Basement = -1, Ground Floor = 0, Upper Floors = 1, 2, 3, etc.",
+      "height_values": "Should be numeric values representing meters",
+      "type_names": "Room types should match the enum values for proper color coding"
+    }
+  }
+}

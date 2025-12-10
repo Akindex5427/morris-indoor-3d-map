@@ -1,0 +1,454 @@
+/**
+ * IndoorBuilding Component - ArcGIS Indoors-style 3D Visualization
+ *
+ * Features:
+ * - Multi-floor "dollhouse mode" with vertical stacking
+ * - Semi-transparent outer walls for interior visibility
+ * - Per-floor translucency controls
+ * - Floor slicing effect with proper depth
+ * - Enhanced lighting for architectural visualization
+ */
+
+import React, { useMemo } from "react";
+import { GeoJsonLayer } from "@deck.gl/layers";
+import {
+  LightingEffect,
+  AmbientLight,
+  DirectionalLight,
+  PointLight,
+} from "@deck.gl/core";
+
+/**
+ * Create lighting effect for indoor visualization
+ */
+export function createIndoorLighting(isDollhouseMode = false) {
+  const ambientLight = new AmbientLight({
+    color: [255, 255, 255],
+    intensity: isDollhouseMode ? 1.0 : 0.6,
+  });
+
+  const directionalLight1 = new DirectionalLight({
+    color: [255, 255, 255],
+    intensity: isDollhouseMode ? 0.6 : 0.8,
+    direction: [-1, -1, -2],
+  });
+
+  const directionalLight2 = new DirectionalLight({
+    color: [255, 255, 255],
+    intensity: 0.4,
+    direction: [1, 1, -1],
+  });
+
+  const pointLight = new PointLight({
+    color: [255, 255, 255],
+    intensity: isDollhouseMode ? 0.8 : 0.4,
+    position: [0, 0, 1000],
+  });
+
+  return new LightingEffect({
+    ambientLight,
+    directionalLight1,
+    directionalLight2,
+    pointLight,
+  });
+}
+
+/**
+ * Parse color from various formats (hex, rgb, named)
+ */
+function parseColor(colorValue) {
+  const namedColors = {
+    grey: [100, 100, 100],
+    gray: [100, 100, 100],
+    lightgrey: [150, 150, 150],
+    white: [220, 220, 220],
+    black: [50, 50, 50],
+    lightpink: [255, 182, 193],
+    pink: [255, 192, 203],
+    red: [255, 0, 0],
+    salmon: [250, 128, 114],
+    brown: [165, 42, 42],
+    orange: [255, 165, 0],
+    yellow: [255, 255, 0],
+    gold: [255, 215, 0],
+    green: [0, 128, 0],
+    lightgreen: [144, 238, 144],
+    blue: [0, 0, 255],
+    lightblue: [173, 216, 230],
+    navy: [0, 0, 128],
+    purple: [128, 0, 128],
+    cyan: [0, 255, 255],
+  };
+
+  if (!colorValue) return [100, 150, 200];
+
+  const colorLower =
+    typeof colorValue === "string" ? colorValue.toLowerCase() : "";
+
+  // Named color
+  if (namedColors[colorLower]) {
+    return namedColors[colorLower];
+  }
+
+  // Hex color
+  if (typeof colorValue === "string" && colorValue.startsWith("#")) {
+    const hex = colorValue.replace("#", "");
+    return [
+      parseInt(hex.substring(0, 2), 16),
+      parseInt(hex.substring(2, 4), 16),
+      parseInt(hex.substring(4, 6), 16),
+    ];
+  }
+
+  // RGB array
+  if (Array.isArray(colorValue) && colorValue.length >= 3) {
+    return colorValue.slice(0, 3);
+  }
+
+  // Default
+  return [100, 150, 200];
+}
+
+/**
+ * IndoorBuilding Layer Creator
+ *
+ * @param {Object} params
+ * @param {Object} params.data - GeoJSON FeatureCollection
+ * @param {Array<number>} params.selectedFloors - Array of floor numbers to display
+ * @param {number} params.translucency - Transparency value 0-1 (0=transparent, 1=opaque)
+ * @param {number} params.heightExaggeration - Height multiplier for vertical exaggeration
+ * @param {number} params.floorSpacing - Vertical spacing between floors in meters
+ * @param {string|null} params.highlightedRoomId - Room ID to highlight
+ * @param {Function} params.onRoomClick - Click handler
+ * @returns {Array<GeoJsonLayer>} Array of Deck.gl layers
+ */
+export function createIndoorBuildingLayers({
+  data,
+  selectedFloors = [],
+  translucency = 0.6,
+  heightExaggeration = 1.0,
+  floorSpacing = 4,
+  highlightedRoomId = null,
+  onRoomClick = null,
+}) {
+  if (!data || !data.features) {
+    return [];
+  }
+
+  const isDollhouseMode = selectedFloors.length > 1;
+  const isSingleFloorMode = selectedFloors.length === 1;
+
+  // Floor base elevation mapping (in meters) - derived from GeoJSON z_values
+  // F0=4.5, F2=22.5, difference=18m across 2 floors = 9m per floor
+  const floorBaseElevations = {
+    0: 4.5, // Basement
+    1: 13.5, // Level 1
+    2: 22.5, // Level 2
+    3: 31.5, // Level 3
+    4: 40.5, // Level 4
+    5: 49.5, // Level 5
+    6: 58.5, // Level 6
+    7: 67.5, // Level 7
+  };
+
+  // Convert LineString features to Polygons for proper 3D extrusion
+  const convertedFeatures = data.features.map((feature) => {
+    if (feature.geometry && feature.geometry.type === "LineString") {
+      const coords = feature.geometry.coordinates;
+      const props = feature.properties || {};
+
+      // Calculate base elevation for this floor
+      // Priority: explicit z_values (>0 or for F0/F2) > floor mapping > floor*spacing
+      const floorNum = props.floor ?? props.nivel ?? props.level ?? 0;
+      const zValue = props.z_values; // Absolute floor base elevation from GeoJSON
+      const baseOffset = props.base_heigh ?? props.base_height ?? 0; // Offset from floor base
+
+      // Calculate base:
+      // - Use z_values if it's explicitly non-zero
+      // - For F0 and F2 (known good data), allow z_values=0 to override (though they shouldn't be 0)
+      // - For other floors, treat z_values=0 as missing and use floor mapping
+      let baseHeight;
+      if (
+        zValue !== null &&
+        zValue !== undefined &&
+        (zValue > 0 || floorNum === 0 || floorNum === 2)
+      ) {
+        baseHeight = zValue;
+      } else {
+        baseHeight = floorBaseElevations[floorNum] ?? floorNum * floorSpacing;
+      }
+
+      // Add any base offset (for individual elements like stair steps)
+      baseHeight += baseOffset; // Check if the LineString forms a closed ring (first point = last point)
+      const isClosedRing =
+        coords.length > 0 &&
+        coords[0][0] === coords[coords.length - 1][0] &&
+        coords[0][1] === coords[coords.length - 1][1];
+
+      // If not closed, close the ring by adding the first point at the end
+      const closedCoords = isClosedRing ? coords : [...coords, coords[0]];
+
+      // Update z-coordinates to base elevation
+      const coordsWithElevation = closedCoords.map((coord) => [
+        coord[0], // longitude
+        coord[1], // latitude
+        baseHeight, // set z to base elevation
+      ]);
+
+      // Convert LineString to Polygon by wrapping coordinates in an array
+      return {
+        ...feature,
+        geometry: {
+          type: "Polygon",
+          coordinates: [coordsWithElevation],
+        },
+      };
+    }
+    return feature;
+  });
+
+  const convertedData = {
+    type: "FeatureCollection",
+    features: convertedFeatures,
+  };
+
+  console.log("[IndoorBuilding] Data:", {
+    originalFeatures: data.features.length,
+    convertedFeatures: convertedFeatures.length,
+    firstFeature: convertedFeatures[0],
+    selectedFloors,
+    translucency,
+    heightExaggeration,
+  });
+
+  // Debug: Check first feature geometry and properties
+  if (convertedFeatures[0]) {
+    const first = convertedFeatures[0];
+    const ring = first.geometry.coordinates[0];
+    const firstPoint = ring[0];
+    const lastPoint = ring[ring.length - 1];
+    const isClosed =
+      firstPoint[0] === lastPoint[0] && firstPoint[1] === lastPoint[1];
+    const props = first.properties || {};
+    const structureHeight = props.height ?? props.altura ?? 3;
+    const height = Math.max(0.1, parseFloat(structureHeight) || 3);
+
+    console.log("[IndoorBuilding] First feature details:", {
+      originalType: data.features[0].geometry.type,
+      convertedType: first.geometry.type,
+      coordinatesLength: ring?.length,
+      firstCoord: firstPoint,
+      lastCoord: lastPoint,
+      isRingClosed: isClosed,
+      baseElevation: firstPoint[2], // z-coordinate is now the base elevation
+      extrusionHeight: height * heightExaggeration,
+      properties: first.properties,
+    });
+  }
+
+  const layers = [];
+
+  // Create single GeoJsonLayer for all features with 3D extrusion
+  const layer = new GeoJsonLayer({
+    id: "indoor-building-layer",
+    data: convertedData,
+    pickable: true,
+    stroked: true,
+    filled: true,
+    extruded: true,
+    wireframe: true,
+    lineWidthMinPixels: isSingleFloorMode ? 2 : isDollhouseMode ? 1.5 : 1,
+    lineWidthMaxPixels: isSingleFloorMode ? 3 : isDollhouseMode ? 2.5 : 2,
+
+    // Material properties for realistic rendering
+    material: {
+      ambient: isDollhouseMode ? 0.7 : 0.5,
+      diffuse: 0.8,
+      shininess: 8,
+      specularColor: [255, 255, 255],
+    },
+
+    // Get fill color with transparency
+    getFillColor: (feature) => {
+      const props = feature.properties || {};
+      const roomId = props.id || props.name || "";
+      const floorNum = props.floor ?? props.nivel ?? props.level ?? 0;
+
+      // Highlight selected room
+      if (highlightedRoomId === roomId) {
+        return [255, 200, 0, 255]; // Gold highlight
+      }
+
+      // Parse base color
+      const baseColor = parseColor(props.color);
+
+      // Apply floor-based shading for depth perception
+      const shadeFactor = Math.max(0.6, Math.min(1.2, 0.75 + floorNum * 0.06));
+      const shadedColor = [
+        Math.min(255, Math.round(baseColor[0] * shadeFactor)),
+        Math.min(255, Math.round(baseColor[1] * shadeFactor)),
+        Math.min(255, Math.round(baseColor[2] * shadeFactor)),
+      ];
+
+      // Calculate alpha based on floor selection and mode
+      let alpha = 255;
+
+      if (isDollhouseMode) {
+        if (selectedFloors.includes(floorNum)) {
+          // Selected floors: semi-transparent for dollhouse effect
+          // Use translucency parameter (0=transparent, 1=opaque)
+          alpha = Math.round(255 * translucency);
+        } else {
+          // Non-selected floors: very transparent
+          const maxFloor = Math.max(...selectedFloors);
+          const minFloor = Math.min(...selectedFloors);
+
+          if (floorNum > maxFloor) {
+            // Above: ghost view
+            alpha = Math.round(255 * translucency * 0.15);
+          } else if (floorNum < minFloor) {
+            // Below: medium transparency
+            alpha = Math.round(255 * translucency * 0.4);
+          } else {
+            // Between: medium-light transparency
+            alpha = Math.round(255 * translucency * 0.3);
+          }
+        }
+      } else if (isSingleFloorMode) {
+        // Single floor: use translucency to show room structure clearly
+        // Apply translucency to make walls visible and rooms distinct
+        if (selectedFloors.includes(floorNum)) {
+          alpha = Math.round(255 * Math.max(0.85, translucency));
+        } else {
+          alpha = 255;
+        }
+      } else {
+        // No floors selected: fully opaque
+        alpha = 255;
+      }
+
+      return [...shadedColor, alpha];
+    },
+
+    // Get line color (edges)
+    getLineColor: (feature) => {
+      const props = feature.properties || {};
+      const floorNum = props.floor ?? props.nivel ?? props.level ?? 0;
+
+      let alpha = 220;
+
+      if (isDollhouseMode) {
+        if (selectedFloors.includes(floorNum)) {
+          alpha = 255; // Solid edges for selected floors
+        } else {
+          const maxFloor = Math.max(...selectedFloors);
+          const minFloor = Math.min(...selectedFloors);
+
+          if (floorNum > maxFloor) {
+            alpha = 30;
+          } else if (floorNum < minFloor) {
+            alpha = 100;
+          } else {
+            alpha = 80;
+          }
+        }
+      } else if (isSingleFloorMode) {
+        // Single floor: strong edges for clear room separation
+        alpha = selectedFloors.includes(floorNum) ? 255 : 220;
+      }
+
+      // Darker edges for Polygon boundaries
+      const edgeColor = isDollhouseMode || isSingleFloorMode ? 25 : 40;
+      return [edgeColor, edgeColor, edgeColor, alpha];
+    },
+
+    // Get elevation: return HEIGHT to extrude (base is already in z-coordinate)
+    getElevation: (feature) => {
+      const props = feature.properties || {};
+
+      // Get wall height from properties
+      const structureHeight = props.height ?? props.altura ?? 3;
+      const height = Math.max(0.1, parseFloat(structureHeight) || 3);
+
+      // Apply height exaggeration and return just the height
+      return height * heightExaggeration;
+    },
+
+    // Update mode for transparency blending
+    updateTriggers: {
+      getFillColor: [
+        selectedFloors,
+        translucency,
+        highlightedRoomId,
+        isDollhouseMode,
+        isSingleFloorMode,
+      ],
+      getLineColor: [
+        selectedFloors,
+        translucency,
+        isDollhouseMode,
+        isSingleFloorMode,
+      ],
+      getElevation: [heightExaggeration, floorSpacing],
+    },
+
+    // Click handler
+    onClick: (info) => {
+      if (info.object && onRoomClick) {
+        onRoomClick(info.object.properties);
+      }
+    },
+  });
+
+  layers.push(layer);
+
+  return layers;
+}
+
+/**
+ * Hook to create indoor building layers
+ */
+export function useIndoorBuilding({
+  data,
+  selectedFloors,
+  translucency,
+  heightExaggeration,
+  floorSpacing,
+  highlightedRoomId,
+  onRoomClick,
+}) {
+  const layers = useMemo(
+    () =>
+      createIndoorBuildingLayers({
+        data,
+        selectedFloors,
+        translucency,
+        heightExaggeration,
+        floorSpacing,
+        highlightedRoomId,
+        onRoomClick,
+      }),
+    [
+      data,
+      selectedFloors,
+      translucency,
+      heightExaggeration,
+      floorSpacing,
+      highlightedRoomId,
+      onRoomClick,
+    ]
+  );
+
+  const lightingEffect = useMemo(
+    () => createIndoorLighting(selectedFloors && selectedFloors.length > 1),
+    [selectedFloors]
+  );
+
+  return { layers, lightingEffect };
+}
+
+export default {
+  createIndoorBuildingLayers,
+  createIndoorLighting,
+  useIndoorBuilding,
+};

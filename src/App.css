@@ -694,3 +694,349 @@ body {
     right: auto;
   }
 }
+
+/* ==================== QUICK WINS STYLES ==================== */
+
+/* Help Overlay */
+.help-overlay-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.help-overlay-content {
+  background: white;
+  border-radius: 16px;
+  padding: 32px;
+  max-width: 600px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  position: relative;
+  animation: slideUp 0.3s ease-out;
+}
+
+.help-overlay-content h2 {
+  margin: 0 0 24px 0;
+  color: #667eea;
+  font-size: 1.8rem;
+  text-align: center;
+}
+
+.help-close-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: transparent;
+  border: none;
+  font-size: 32px;
+  color: #999;
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.help-close-btn:hover {
+  background: #f0f0f0;
+  color: #333;
+  transform: rotate(90deg);
+}
+
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.shortcut-item:hover {
+  background: #e9ecef;
+  transform: translateX(4px);
+}
+
+.shortcut-key {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-family: "Courier New", monospace;
+  font-weight: bold;
+  font-size: 0.9rem;
+  min-width: 50px;
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+}
+
+.shortcut-description {
+  color: #555;
+  font-size: 0.95rem;
+}
+
+.help-footer {
+  background: #f0f4ff;
+  padding: 16px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.help-footer p {
+  margin: 0;
+  color: #667eea;
+  font-weight: 500;
+}
+
+/* Dark Mode Styles */
+body.dark-mode {
+  background-color: #1a1a1a;
+  color: #e0e0e0;
+}
+
+.dark-mode .App {
+  background: #1a1a1a;
+}
+
+.dark-mode .app-header {
+  background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+}
+
+.dark-mode .left-panel {
+  background: #2d3748;
+  border-right-color: #4a5568;
+  color: #e0e0e0;
+}
+
+.dark-mode .panel-section {
+  border-bottom-color: #4a5568;
+}
+
+.dark-mode .panel-section h3,
+.dark-mode .panel-section h4 {
+  color: #e0e0e0;
+}
+
+.dark-mode .panel-info {
+  background: #1a202c;
+  color: #cbd5e0;
+}
+
+.dark-mode .search-input {
+  background: #1a202c;
+  border-color: #4a5568;
+  color: #e0e0e0;
+}
+
+.dark-mode .search-input::placeholder {
+  color: #718096;
+}
+
+.dark-mode .search-suggestions {
+  background: #2d3748;
+  border-color: #4a5568;
+}
+
+.dark-mode .suggestion-item {
+  border-bottom-color: #4a5568;
+  color: #e0e0e0;
+}
+
+.dark-mode .suggestion-item:hover {
+  background: #4a5568;
+}
+
+.dark-mode .floor-btn {
+  background: #2d3748;
+  color: #e0e0e0;
+  border-color: #4a5568;
+}
+
+.dark-mode .floor-btn:hover {
+  background: #4a5568;
+}
+
+.dark-mode .floor-btn.active {
+  background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+}
+
+.dark-mode .help-overlay-content {
+  background: #2d3748;
+  color: #e0e0e0;
+}
+
+.dark-mode .help-overlay-content h2 {
+  color: #90cdf4;
+}
+
+.dark-mode .shortcut-item {
+  background: #1a202c;
+}
+
+.dark-mode .shortcut-item:hover {
+  background: #4a5568;
+}
+
+.dark-mode .shortcut-description {
+  color: #cbd5e0;
+}
+
+.dark-mode .help-footer {
+  background: #1a202c;
+}
+
+.dark-mode .help-footer p {
+  color: #90cdf4;
+}
+
+/* Loading Spinner Inline Styles Override */
+.loading-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.dark-mode .loading-container {
+  background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+}
+
+/* Smooth Transitions */
+.map-container {
+  transition: filter 0.3s ease;
+}
+
+body.dark-mode .map-container {
+  filter: brightness(0.9);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Help Button */
+.help-button {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  font-size: 24px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  z-index: 999;
+  transition: all 0.3s ease;
+}
+
+.help-button:hover {
+  transform: scale(1.1) rotate(15deg);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+}
+
+.dark-mode .help-button {
+  background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+  box-shadow: 0 4px 12px rgba(74, 85, 104, 0.4);
+}
+
+.dark-mode .help-button:hover {
+  box-shadow: 0 6px 20px rgba(74, 85, 104, 0.6);
+}
+
+/* Dark Mode Toggle */
+.dark-mode-toggle {
+  position: fixed;
+  top: 90px;
+  right: 20px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  color: white;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(240, 147, 251, 0.4);
+  z-index: 999;
+  transition: all 0.3s ease;
+}
+
+.dark-mode-toggle:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(240, 147, 251, 0.6);
+}
+
+.dark-mode .dark-mode-toggle {
+  background: linear-gradient(135deg, #ffd89b 0%, #19547b 100%);
+}
+
+/* Reset View Button */
+.reset-view-button {
+  position: fixed;
+  top: 150px;
+  right: 20px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+  color: white;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(17, 153, 142, 0.4);
+  z-index: 999;
+  transition: all 0.3s ease;
+}
+
+.reset-view-button:hover {
+  transform: scale(1.1) rotate(-45deg);
+  box-shadow: 0 6px 20px rgba(17, 153, 142, 0.6);
+}
+
+.dark-mode .reset-view-button {
+  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+}

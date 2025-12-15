@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import DeckGL from "@deck.gl/react";
-import { Map } from "react-map-gl/mapbox";
+import Map from "react-map-gl";
 import { PathLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
 import { useIndoorBuilding } from "./IndoorBuilding";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -57,6 +57,8 @@ const Map3D = ({
   onRoomSelect,
   filteredRooms,
   highlightedRoomId,
+  hoveredRoomId,
+  onRoomHover,
   colorScheme,
   viewState: externalViewState,
   onViewStateChange,
@@ -73,7 +75,18 @@ const Map3D = ({
     bearing: 0,
   });
   const [internalViewState, setInternalViewState] = useState(initialViewState);
+  const [isMounted, setIsMounted] = useState(false);
+  const [webglError, setWebglError] = useState(null);
   const deckRef = useRef(null);
+  const containerRef = useRef(null);
+
+  // Wait for component to mount before initializing DeckGL
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsMounted(true);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Convert roomsData to GeoJSON format and update geojsonData
   useEffect(() => {
@@ -205,8 +218,16 @@ const Map3D = ({
   }, [selectedFloors, selectedFloor, allAvailableFloors]);
 
   // Use the new IndoorBuilding hook for ArcGIS Indoors-style visualization
-  const { layers: indoorLayers, lightingEffect } = useIndoorBuilding({
-    data: getDisplayData(),
+  const displayData = getDisplayData();
+  console.log("[Map3D] Display data:", {
+    featureCount: displayData.features?.length || 0,
+    floorsToDisplay,
+    selectedFloors,
+    selectedFloor,
+  });
+
+  const indoorBuildingResult = useIndoorBuilding({
+    data: displayData,
     selectedFloors: floorsToDisplay,
     translucency: translucency / 100, // Convert from 0-100 to 0-1
     heightExaggeration,
@@ -217,6 +238,13 @@ const Map3D = ({
       onRoomSelect(roomProps, roomId);
     },
   });
+
+  const { layers: indoorLayers, lightingEffect } = indoorBuildingResult || {
+    layers: [],
+    lightingEffect: null,
+  };
+
+  console.log("[Map3D] Indoor layers:", indoorLayers?.length || 0);
 
   const layers = [...indoorLayers];
 
@@ -332,14 +360,77 @@ const Map3D = ({
     }
   }
 
-  // Don't render until we have data to avoid WebGL initialization issues
+  // Show WebGL error if detected
+  if (webglError) {
+    return (
+      <div
+        ref={containerRef}
+        className="map-3d-container"
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "#1a1a1a",
+          color: "#ffffff",
+          padding: "20px",
+          textAlign: "center",
+        }}
+      >
+        <h2 style={{ color: "#ff6b6b", marginBottom: "20px" }}>
+          ⚠️ WebGL Not Available
+        </h2>
+        <p style={{ marginBottom: "10px", maxWidth: "600px" }}>
+          WebGL is disabled or not supported in your browser. This application
+          requires WebGL for 3D rendering.
+        </p>
+        <div
+          style={{
+            marginTop: "20px",
+            textAlign: "left",
+            maxWidth: "600px",
+            fontSize: "14px",
+          }}
+        >
+          <p style={{ fontWeight: "bold", marginBottom: "10px" }}>
+            To enable WebGL:
+          </p>
+          <ol style={{ paddingLeft: "20px" }}>
+            <li>
+              Open browser settings (chrome://settings/system or
+              edge://settings/system)
+            </li>
+            <li>Enable "Use hardware acceleration when available"</li>
+            <li>Restart your browser</li>
+          </ol>
+          <p style={{ marginTop: "15px" }}>
+            Test WebGL:{" "}
+            <a
+              href="https://get.webgl.org/"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "#4dabf7" }}
+            >
+              https://get.webgl.org/
+            </a>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render until we have data and component is mounted
   if (
+    !isMounted ||
     !geojsonData ||
     !geojsonData.features ||
     geojsonData.features.length === 0
   ) {
     return (
       <div
+        ref={containerRef}
         className="map-3d-container"
         style={{
           width: "100%",
@@ -358,13 +449,15 @@ const Map3D = ({
 
   return (
     <div
+      ref={containerRef}
       className="map-3d-container"
       style={{ width: "100%", height: "100%", position: "relative" }}
     >
       <DeckGL
         ref={deckRef}
-        initialViewState={internalViewState}
-        viewState={externalViewState}
+        width="100%"
+        height="100%"
+        initialViewState={externalViewState || internalViewState}
         onViewStateChange={({ viewState: newViewState }) => {
           setInternalViewState(newViewState);
           if (onViewStateChange) {
@@ -386,13 +479,29 @@ const Map3D = ({
           maxPitch: 85,
         }}
         layers={layers}
-        effects={lightingEnabled ? [lightingEffect] : []}
+        effects={lightingEnabled && lightingEffect ? [lightingEffect] : []}
+        parameters={{
+          depthTest: true,
+          blend: true,
+          blendFunc: [770, 771], // GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA
+          depthFunc: 515, // GL_LEQUAL
+        }}
         getCursor={() => "grab"}
         getTooltip={null}
         style={{ width: "100%", height: "100%" }}
         onWebGLInitialized={(gl) => {
-          if (!gl) {
+          if (gl) {
+            console.log("WebGL initialized successfully", gl);
+            setWebglError(null);
+          } else {
             console.error("WebGL initialization failed");
+            setWebglError("WebGL context could not be created");
+          }
+        }}
+        onError={(error) => {
+          console.error("DeckGL error:", error);
+          if (error.message && error.message.includes("WebGL")) {
+            setWebglError(error.message);
           }
         }}
       >

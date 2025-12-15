@@ -19,9 +19,11 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": "/src",
+      "react-map-gl": "react-map-gl/dist/esm/index.js",
     },
   },
   optimizeDeps: {
+    include: ["react-map-gl"],
     esbuildOptions: {
       loader: {
         ".js": "jsx",

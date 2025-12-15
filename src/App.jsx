@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { FlyToInterpolator } from "@deck.gl/core";
 import "./App.css";
 import Map3D from "./components/Map3D";
 import FloorSwitcher from "./components/FloorSwitcher";
@@ -9,6 +10,8 @@ import NavigationControls from "./components/NavigationControls";
 import VisualControls from "./components/VisualControls";
 import Legend from "./components/Legend";
 import RoutePlanner from "./components/RoutePlanner";
+import LoadingSpinner from "./components/LoadingSpinner";
+import HelpOverlay from "./components/HelpOverlay";
 import { findRoute, calculateRouteDistance } from "./utils/pathfinding";
 
 function App() {
@@ -35,6 +38,105 @@ function App() {
   const [showRoutePlanner, setShowRoutePlanner] = useState(false);
   const [routePath, setRoutePath] = useState(null);
   const [routeInfo, setRouteInfo] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
+  const [hoveredRoomId, setHoveredRoomId] = useState(null);
+  const [showHelp, setShowHelp] = useState(false);
+
+  // Apply dark mode to body
+  useEffect(() => {
+    if (darkMode) {
+      document.body.classList.add("dark-mode");
+    } else {
+      document.body.classList.remove("dark-mode");
+    }
+  }, [darkMode]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      // Don't trigger shortcuts when typing in inputs
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")
+        return;
+
+      switch (e.key.toLowerCase()) {
+        case "0":
+        case "1":
+        case "2":
+        case "3":
+        case "4":
+        case "5":
+        case "6":
+        case "7":
+          handleFloorChange(parseInt(e.key));
+          break;
+        case "a":
+          handleFloorChange("all");
+          break;
+        case "r":
+          handleViewReset();
+          break;
+        case "l":
+          setLightingEnabled((prev) => !prev);
+          break;
+        case "d":
+          setDarkMode((prev) => !prev);
+          break;
+        case "f":
+          setShowFilterPanel((prev) => !prev);
+          break;
+        case "p":
+          setShowRoutePlanner((prev) => !prev);
+          break;
+        case "?":
+          setShowHelp((prev) => !prev);
+          break;
+        case "escape":
+          setShowHelp(false);
+          setShowFilterPanel(false);
+          setShowRoutePlanner(false);
+          setSelectedRoom(null);
+          break;
+        case "arrowup":
+          setViewState((prev) => ({
+            ...prev,
+            pitch: Math.min(85, prev.pitch + 5),
+          }));
+          break;
+        case "arrowdown":
+          setViewState((prev) => ({
+            ...prev,
+            pitch: Math.max(0, prev.pitch - 5),
+          }));
+          break;
+        case "arrowleft":
+          setViewState((prev) => ({ ...prev, bearing: prev.bearing - 15 }));
+          break;
+        case "arrowright":
+          setViewState((prev) => ({ ...prev, bearing: prev.bearing + 15 }));
+          break;
+        case "+":
+        case "=":
+          setViewState((prev) => ({
+            ...prev,
+            zoom: Math.min(22, prev.zoom + 0.5),
+          }));
+          break;
+        case "-":
+        case "_":
+          setViewState((prev) => ({
+            ...prev,
+            zoom: Math.max(14, prev.zoom - 0.5),
+          }));
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyPress);
+    return () => window.removeEventListener("keydown", handleKeyPress);
+  }, []);
 
   // Polygon extrusion sources (primary) and optional line overlays (outlines)
   const FLOOR_POLYGON_MAP = {
@@ -152,9 +254,12 @@ function App() {
         }
       } catch (error) {
         console.error("Error loading GeoJSON:", error);
+      } finally {
+        setIsLoading(false);
       }
     };
 
+    setIsLoading(true);
     loadGeojson();
   }, [selectedFloor]);
 
@@ -173,6 +278,35 @@ function App() {
       x: window.innerWidth / 2 - 150,
       y: window.innerHeight / 2 - 150,
     });
+
+    // Smooth camera animation to room (if geometry available)
+    const feature = allRooms.find(
+      (r) => (r.properties?.id || r.properties?.name) === roomId
+    );
+    if (feature?.geometry) {
+      try {
+        const coords =
+          feature.geometry.type === "Polygon"
+            ? feature.geometry.coordinates[0][0]
+            : feature.geometry.type === "MultiPolygon"
+            ? feature.geometry.coordinates[0][0][0]
+            : null;
+
+        if (coords) {
+          setViewState((prev) => ({
+            ...prev,
+            longitude: coords[0],
+            latitude: coords[1],
+            zoom: 19.5,
+            pitch: 50,
+            transitionDuration: 1200,
+            transitionInterpolator: new FlyToInterpolator(),
+          }));
+        }
+      } catch (e) {
+        console.log("Could not animate to room:", e);
+      }
+    }
   };
 
   const handleSearch = (roomIds) => {
@@ -291,8 +425,41 @@ function App() {
     }
   };
 
+  // Show loading screen while data is loading
+  if (isLoading) {
+    return <LoadingSpinner message="Loading 3D building model..." />;
+  }
+
   return (
     <div className="App">
+      {/* Help Overlay */}
+      {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
+
+      {/* Floating Action Buttons */}
+      <button
+        className="help-button"
+        onClick={() => setShowHelp(true)}
+        title="Keyboard Shortcuts (Press ?)"
+      >
+        ?
+      </button>
+
+      <button
+        className="dark-mode-toggle"
+        onClick={() => setDarkMode((prev) => !prev)}
+        title={`Switch to ${darkMode ? "Light" : "Dark"} Mode (Press D)`}
+      >
+        {darkMode ? "☀️" : "🌙"}
+      </button>
+
+      <button
+        className="reset-view-button"
+        onClick={handleViewReset}
+        title="Reset View (Press R)"
+      >
+        🏠
+      </button>
+
       <div className="app-container">
         {/* Header */}
         <header className="app-header">
@@ -406,6 +573,8 @@ function App() {
               onRoomSelect={handleRoomSelect}
               filteredRooms={filteredRooms}
               highlightedRoomId={highlightedRoomId}
+              hoveredRoomId={hoveredRoomId}
+              onRoomHover={setHoveredRoomId}
               colorScheme="default"
               viewState={viewState}
               onViewStateChange={setViewState}

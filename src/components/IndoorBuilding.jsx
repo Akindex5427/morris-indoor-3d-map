@@ -684,168 +684,173 @@ export const useIndoorBuilding = ({
     const isDollhouseMode = selectedFloors.length > 1;
     const isSingleFloorMode = selectedFloors.length === 1;
 
-    // Create GeoJSON layer
-    const layer = new GeoJsonLayer({
-      id: "indoor-building-layer",
-      data: filteredData,
-      pickable: true,
-      stroked: true,
-      filled: true,
-      extruded: true,
-      wireframe: false,
-      lineWidthMinPixels: isSingleFloorMode ? 2 : isDollhouseMode ? 1.5 : 1,
-      lineWidthMaxPixels: isSingleFloorMode ? 3 : isDollhouseMode ? 2.5 : 2,
+    try {
+      // Create GeoJSON layer
+      const layer = new GeoJsonLayer({
+        id: "indoor-building-layer",
+        data: filteredData,
+        pickable: true,
+        stroked: true,
+        filled: true,
+        extruded: true,
+        wireframe: false,
+        lineWidthMinPixels: isSingleFloorMode ? 2 : isDollhouseMode ? 1.5 : 1,
+        lineWidthMaxPixels: isSingleFloorMode ? 3 : isDollhouseMode ? 2.5 : 2,
 
-      material: (feature) => {
-        const props = feature?.properties || {};
-        // Floor surfaces need high ambient/diffuse to appear bright white/transparent
-        if (isFloorSurface(props)) {
+        material: (feature) => {
+          const props = feature?.properties || {};
+          // Floor surfaces need high ambient/diffuse to appear bright white/transparent
+          if (isFloorSurface(props)) {
+            return {
+              ambient: 0.95,
+              diffuse: 0.95,
+              shininess: 0,
+              specularColor: [0, 0, 0],
+            };
+          }
+          // Regular compartments use standard material
           return {
-            ambient: 0.95,
-            diffuse: 0.95,
+            ambient: 0.4,
+            diffuse: 0.8,
             shininess: 0,
             specularColor: [0, 0, 0],
           };
-        }
-        // Regular compartments use standard material
-        return {
-          ambient: 0.4,
-          diffuse: 0.8,
-          shininess: 0,
-          specularColor: [0, 0, 0],
-        };
-      },
+        },
 
-      getFillColor: (feature) => {
-        const props = feature.properties || {};
-        const roomId = props.id || props.name || "";
-        const floorNum = props.level ?? props.floor ?? props.nivel ?? 0;
+        getFillColor: (feature) => {
+          const props = feature.properties || {};
+          const roomId = props.id || props.name || "";
+          const floorNum = props.level ?? props.floor ?? props.nivel ?? 0;
 
-        if (highlightedRoomId === roomId) {
-          return [255, 200, 0, 255];
-        }
-
-        if (isFloorSurface(props)) {
-          return getFloorSurfaceColor(floorNum, isDollhouseMode);
-        }
-
-        const baseColor = parseColor(props.color);
-
-        const nameLower =
-          typeof props.name === "string" ? props.name.toLowerCase() : "";
-        const isSpecialCompartment =
-          nameLower.includes("stair") ||
-          nameLower.includes("structure") ||
-          nameLower.includes("mechanical") ||
-          nameLower.includes("elevator") ||
-          nameLower.includes("shaft");
-
-        let shadedColor;
-        if (isSpecialCompartment) {
-          // Preserve EXACT color from GeoJSON - NO modifications
-          shadedColor = [baseColor[0], baseColor[1], baseColor[2]];
-        } else {
-          // Apply very subtle floor-based shading for regular rooms only
-          const shadeFactor = Math.max(
-            0.9,
-            Math.min(1.1, 0.98 + floorNum * 0.02)
-          );
-          shadedColor = [
-            Math.min(255, Math.round(baseColor[0] * shadeFactor)),
-            Math.min(255, Math.round(baseColor[1] * shadeFactor)),
-            Math.min(255, Math.round(baseColor[2] * shadeFactor)),
-          ];
-        }
-
-        let alpha = 255;
-        const isFacade =
-          nameLower.includes("exterior") || nameLower.includes("facade");
-        const isOuterWall =
-          nameLower.includes("floor") && !nameLower.includes("floor_");
-
-        if (isDollhouseMode) {
-          if (selectedFloors.includes(floorNum)) {
-            alpha = isFacade
-              ? 0
-              : isOuterWall
-              ? Math.round(255 * 0.15)
-              : Math.round(255 * translucency);
-          } else {
-            const maxFloor = Math.max(...selectedFloors);
-            const minFloor = Math.min(...selectedFloors);
-            if (floorNum > maxFloor) {
-              alpha = Math.round(255 * translucency * 0.15);
-            } else if (floorNum < minFloor) {
-              alpha = Math.round(255 * translucency * 0.4);
-            } else {
-              alpha = Math.round(255 * translucency * 0.3);
-            }
+          if (highlightedRoomId === roomId) {
+            return [255, 200, 0, 255];
           }
-        } else if (isSingleFloorMode) {
-          if (selectedFloors.includes(floorNum)) {
-            alpha = Math.round(255 * Math.max(0.85, translucency));
+
+          if (isFloorSurface(props)) {
+            return getFloorSurfaceColor(floorNum, isDollhouseMode);
+          }
+
+          const baseColor = parseColor(props.color);
+
+          const nameLower =
+            typeof props.name === "string" ? props.name.toLowerCase() : "";
+          const isSpecialCompartment =
+            nameLower.includes("stair") ||
+            nameLower.includes("structure") ||
+            nameLower.includes("mechanical") ||
+            nameLower.includes("elevator") ||
+            nameLower.includes("shaft");
+
+          let shadedColor;
+          if (isSpecialCompartment) {
+            // Preserve EXACT color from GeoJSON - NO modifications
+            shadedColor = [baseColor[0], baseColor[1], baseColor[2]];
+          } else {
+            // Apply very subtle floor-based shading for regular rooms only
+            const shadeFactor = Math.max(
+              0.9,
+              Math.min(1.1, 0.98 + floorNum * 0.02)
+            );
+            shadedColor = [
+              Math.min(255, Math.round(baseColor[0] * shadeFactor)),
+              Math.min(255, Math.round(baseColor[1] * shadeFactor)),
+              Math.min(255, Math.round(baseColor[2] * shadeFactor)),
+            ];
+          }
+
+          let alpha = 255;
+          const isFacade =
+            nameLower.includes("exterior") || nameLower.includes("facade");
+          const isOuterWall =
+            nameLower.includes("floor") && !nameLower.includes("floor_");
+
+          if (isDollhouseMode) {
+            if (selectedFloors.includes(floorNum)) {
+              alpha = isFacade
+                ? 0
+                : isOuterWall
+                ? Math.round(255 * 0.15)
+                : Math.round(255 * translucency);
+            } else {
+              const maxFloor = Math.max(...selectedFloors);
+              const minFloor = Math.min(...selectedFloors);
+              if (floorNum > maxFloor) {
+                alpha = Math.round(255 * translucency * 0.15);
+              } else if (floorNum < minFloor) {
+                alpha = Math.round(255 * translucency * 0.4);
+              } else {
+                alpha = Math.round(255 * translucency * 0.3);
+              }
+            }
+          } else if (isSingleFloorMode) {
+            if (selectedFloors.includes(floorNum)) {
+              alpha = Math.round(255 * Math.max(0.85, translucency));
+            } else {
+              alpha = 255;
+            }
           } else {
             alpha = 255;
           }
-        } else {
-          alpha = 255;
-        }
 
-        return [...shadedColor, alpha];
-      },
+          return [...shadedColor, alpha];
+        },
 
-      getLineColor: (feature) => {
-        const props = feature.properties || {};
-        const floorNum = props.level ?? props.floor ?? props.nivel ?? 0;
-        let alpha = 220;
+        getLineColor: (feature) => {
+          const props = feature.properties || {};
+          const floorNum = props.level ?? props.floor ?? props.nivel ?? 0;
+          let alpha = 220;
 
-        if (isDollhouseMode) {
-          if (selectedFloors.includes(floorNum)) {
-            alpha = 255;
-          } else {
-            const maxFloor = Math.max(...selectedFloors);
-            const minFloor = Math.min(...selectedFloors);
-            if (floorNum > maxFloor) {
-              alpha = 30;
-            } else if (floorNum < minFloor) {
-              alpha = 100;
+          if (isDollhouseMode) {
+            if (selectedFloors.includes(floorNum)) {
+              alpha = 255;
             } else {
-              alpha = 80;
+              const maxFloor = Math.max(...selectedFloors);
+              const minFloor = Math.min(...selectedFloors);
+              if (floorNum > maxFloor) {
+                alpha = 30;
+              } else if (floorNum < minFloor) {
+                alpha = 100;
+              } else {
+                alpha = 80;
+              }
             }
+          } else if (isSingleFloorMode) {
+            alpha = selectedFloors.includes(floorNum) ? 255 : 220;
           }
-        } else if (isSingleFloorMode) {
-          alpha = selectedFloors.includes(floorNum) ? 255 : 220;
-        }
 
-        const edgeColor = isDollhouseMode || isSingleFloorMode ? 25 : 40;
-        return [edgeColor, edgeColor, edgeColor, alpha];
-      },
+          const edgeColor = isDollhouseMode || isSingleFloorMode ? 25 : 40;
+          return [edgeColor, edgeColor, edgeColor, alpha];
+        },
 
-      getElevation: (feature) =>
-        computeElevation(
-          feature,
-          floorSpacing,
-          heightExaggeration,
-          isDollhouseMode
-        ),
+        getElevation: (feature) =>
+          computeElevation(
+            feature,
+            floorSpacing,
+            heightExaggeration,
+            isDollhouseMode
+          ),
 
-      onClick: (info) => {
-        if (info.object && onRoomClick) {
-          onRoomClick(info.object.properties);
-        }
-      },
+        onClick: (info) => {
+          if (info.object && onRoomClick) {
+            onRoomClick(info.object.properties);
+          }
+        },
 
-      updateTriggers: {
-        getFillColor: [highlightedRoomId, translucency, selectedFloors],
-        getLineColor: [selectedFloors, translucency],
-        getElevation: [floorSpacing, heightExaggeration],
-      },
-    });
+        updateTriggers: {
+          getFillColor: [highlightedRoomId, translucency, selectedFloors],
+          getLineColor: [selectedFloors, translucency],
+          getElevation: [floorSpacing, heightExaggeration],
+        },
+      });
 
-    return {
-      layers: [layer],
-      lightingEffect: createIndoorLighting(isDollhouseMode),
-    };
+      return {
+        layers: [layer],
+        lightingEffect: createIndoorLighting(isDollhouseMode),
+      };
+    } catch (error) {
+      console.error("Error creating indoor building layers:", error);
+      return { layers: [], lightingEffect: createIndoorLighting(false) };
+    }
   }, [
     filteredData,
     selectedFloors,

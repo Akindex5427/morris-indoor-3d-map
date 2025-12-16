@@ -252,109 +252,343 @@ const Map3D = ({
   if (routePath && routePath.length > 1) {
     console.log("[Map3D] Rendering route with", routePath.length, "waypoints");
 
-    // Create path coordinates with proper z-elevation based on floor
+    // Create path coordinates using actual room base elevations
+    const PATH_ELEVATION_OFFSET = 2.0; // Raised high above floor like Google Maps
     const pathCoords = routePath.map((point) => {
-      const elevation = getFloorElevation(point.floor);
-      return [...point.coords, elevation]; // Add z-coordinate [lon, lat, elevation]
+      // Try to get base elevation from room features
+      let baseElevation = getFloorElevation(point.floor);
+
+      if (point.features?.[0]?.properties?.base_height !== undefined) {
+        baseElevation = parseFloat(point.features[0].properties.base_height);
+      } else if (point.features?.[0]?.properties?.base_heigh !== undefined) {
+        baseElevation = parseFloat(point.features[0].properties.base_heigh);
+      }
+
+      const totalElevation = baseElevation + PATH_ELEVATION_OFFSET;
+      console.log(
+        `[Map3D] Path point: floor=${point.floor}, baseElev=${baseElevation}, totalElev=${totalElevation}, room=${point.name}`
+      );
+      return [...point.coords, totalElevation]; // [lon, lat, elevation]
     });
 
     console.log("[Map3D] Route path coordinates:", pathCoords);
 
-    // Route path layer
+    // Bold blue route path like Google Maps (outer border/glow)
     layers.push(
       new PathLayer({
-        id: "route-path",
+        id: "route-path-border",
         data: [{ path: pathCoords }],
         getPath: (d) => d.path,
-        getColor: [255, 100, 50, 255], // Orange/red color for route
-        getWidth: 3,
-        widthMinPixels: 3,
-        widthMaxPixels: 8,
+        getColor: [30, 80, 180, 200],
+        getWidth: 24,
+        widthMinPixels: 14,
+        widthMaxPixels: 30,
         widthScale: 1,
         rounded: true,
         billboard: false,
         pickable: false,
+        opacity: 0.6,
       })
     );
 
-    // Start and end point markers with proper elevation + offset to appear above floor
+    // Main bold blue path (like Google Maps)
+    layers.push(
+      new PathLayer({
+        id: "route-path-main",
+        data: [{ path: pathCoords }],
+        getPath: (d) => d.path,
+        getColor: [66, 133, 244, 255], // Google Maps blue
+        getWidth: 16,
+        widthMinPixels: 10,
+        widthMaxPixels: 20,
+        widthScale: 1,
+        rounded: true,
+        billboard: false,
+        pickable: true,
+        opacity: 1.0,
+      })
+    );
+
+    // Inner highlight for 3D effect
+    layers.push(
+      new PathLayer({
+        id: "route-path-highlight",
+        data: [
+          {
+            path: pathCoords.map((c) => [c[0], c[1], c[2] + 0.1]),
+          },
+        ],
+        getPath: (d) => d.path,
+        getColor: [130, 180, 255, 180],
+        getWidth: 8,
+        widthMinPixels: 5,
+        widthMaxPixels: 12,
+        widthScale: 1,
+        rounded: true,
+        billboard: false,
+        pickable: false,
+        opacity: 0.8,
+      })
+    );
+
+    // Start and end point markers - place ON the floor surface using room's actual base elevation
+    // Get the actual room features to read their base_height property
+    const startRoom = routePath[0].features?.[0];
+    const endRoom = routePath[routePath.length - 1].features?.[0];
+
+    // Calculate base elevation from room properties
+    const getBaseElevation = (room, floor) => {
+      if (room?.properties?.base_height !== undefined) {
+        return parseFloat(room.properties.base_height);
+      }
+      if (room?.properties?.base_heigh !== undefined) {
+        return parseFloat(room.properties.base_heigh);
+      }
+      // Fallback to floor-based elevation
+      return getFloorElevation(floor);
+    };
+
+    const MARKER_FLOOR_OFFSET = 4.0; // Raised very high above floor to prevent any sinking
     const markerData = [
       {
         position: [
           ...routePath[0].coords,
-          getFloorElevation(routePath[0].floor) + MARKER_ELEVATION_OFFSET,
+          getBaseElevation(startRoom, routePath[0].floor) + MARKER_FLOOR_OFFSET,
         ],
         type: "start",
+        floor: routePath[0].floor,
+        roomName: routePath[0].name || "Start",
       },
       {
         position: [
           ...routePath[routePath.length - 1].coords,
-          getFloorElevation(routePath[routePath.length - 1].floor) +
-            MARKER_ELEVATION_OFFSET,
+          getBaseElevation(endRoom, routePath[routePath.length - 1].floor) +
+            MARKER_FLOOR_OFFSET,
         ],
         type: "end",
+        floor: routePath[routePath.length - 1].floor,
+        roomName: routePath[routePath.length - 1].name || "End",
       },
     ];
 
-    console.log("[Map3D] Marker data:", markerData);
+    console.log(
+      "[Map3D] Route Start - Floor:",
+      routePath[0].floor,
+      "Coords:",
+      routePath[0].coords,
+      "Elevation:",
+      markerData[0].position[2]
+    );
+    console.log(
+      "[Map3D] Route End - Floor:",
+      routePath[routePath.length - 1].floor,
+      "Coords:",
+      routePath[routePath.length - 1].coords,
+      "Elevation:",
+      markerData[1].position[2]
+    );
 
+    // PIN DESIGN: Base glow at floor level (where pin touches ground)
     layers.push(
       new ScatterplotLayer({
-        id: "route-markers",
+        id: "route-pin-base-glow",
         data: markerData,
-        getPosition: (d) => {
-          console.log(
-            "[Map3D] Getting position for marker:",
-            d.type,
-            "at",
-            d.position
-          );
-          return d.position;
-        },
+        getPosition: (d) => [
+          d.position[0],
+          d.position[1],
+          d.position[2] - 4.0, // At floor level
+        ],
         getFillColor: (d) =>
-          d.type === "start" ? [50, 200, 50, 255] : [255, 50, 50, 255],
-        getRadius: 30, // Large radius for visibility
-        radiusMinPixels: 15, // Always visible even when zoomed out
-        radiusMaxPixels: 60, // Scale up when zoomed in
-        pickable: true,
-        stroked: true,
-        filled: true,
-        lineWidthMinPixels: 4, // Thick white border
-        getLineColor: [255, 255, 255, 255],
+          d.type === "start" ? [80, 255, 80, 120] : [255, 80, 80, 120],
+        getRadius: 20,
+        radiusUnits: "pixels",
+        pickable: false,
+        opacity: 0.5,
       })
     );
 
-    // Add text labels for markers (slightly above the marker spheres)
+    // PIN: Pointed base (bottom of pin)
+    layers.push(
+      new ScatterplotLayer({
+        id: "route-pin-point",
+        data: markerData,
+        getPosition: (d) => [d.position[0], d.position[1], d.position[2] - 3.8],
+        getFillColor: (d) =>
+          d.type === "start" ? [60, 200, 60, 255] : [200, 60, 60, 255],
+        getRadius: 6,
+        radiusUnits: "pixels",
+        pickable: false,
+        opacity: 1.0,
+      })
+    );
+
+    // PIN: Stem/shaft (middle part connecting to head)
+    layers.push(
+      new ScatterplotLayer({
+        id: "route-pin-stem-bottom",
+        data: markerData,
+        getPosition: (d) => [d.position[0], d.position[1], d.position[2] - 3.0],
+        getFillColor: (d) =>
+          d.type === "start" ? [70, 220, 70, 255] : [220, 70, 70, 255],
+        getRadius: 4,
+        radiusUnits: "pixels",
+        pickable: false,
+        opacity: 1.0,
+      })
+    );
+
+    layers.push(
+      new ScatterplotLayer({
+        id: "route-pin-stem-mid",
+        data: markerData,
+        getPosition: (d) => [d.position[0], d.position[1], d.position[2] - 2.0],
+        getFillColor: (d) =>
+          d.type === "start" ? [70, 220, 70, 255] : [220, 70, 70, 255],
+        getRadius: 4,
+        radiusUnits: "pixels",
+        pickable: false,
+        opacity: 1.0,
+      })
+    );
+
+    layers.push(
+      new ScatterplotLayer({
+        id: "route-pin-stem-top",
+        data: markerData,
+        getPosition: (d) => [d.position[0], d.position[1], d.position[2] - 1.0],
+        getFillColor: (d) =>
+          d.type === "start" ? [70, 220, 70, 255] : [220, 70, 70, 255],
+        getRadius: 4,
+        radiusUnits: "pixels",
+        pickable: false,
+        opacity: 1.0,
+      })
+    );
+
+    // PIN: Head glow (outer ring around head)
+    layers.push(
+      new ScatterplotLayer({
+        id: "route-pin-head-glow",
+        data: markerData,
+        getPosition: (d) => d.position,
+        getFillColor: (d) =>
+          d.type === "start" ? [80, 255, 80, 100] : [255, 80, 80, 100],
+        getRadius: 22,
+        radiusUnits: "pixels",
+        pickable: false,
+        opacity: 0.6,
+      })
+    );
+
+    // PIN: Main head (circular top of pin)
+    layers.push(
+      new ScatterplotLayer({
+        id: "route-pin-head",
+        data: markerData,
+        getPosition: (d) => d.position,
+        getFillColor: (d) =>
+          d.type === "start" ? [80, 255, 80, 255] : [255, 80, 80, 255],
+        getRadius: 16,
+        radiusUnits: "pixels",
+        pickable: true,
+        stroked: true,
+        filled: true,
+        lineWidthMinPixels: 2,
+        getLineColor: [255, 255, 255, 255],
+        opacity: 1.0,
+      })
+    );
+
+    // PIN: Head highlight (glossy effect on top)
+    layers.push(
+      new ScatterplotLayer({
+        id: "route-pin-head-highlight",
+        data: markerData,
+        getPosition: (d) => [
+          d.position[0] - 0.00002,
+          d.position[1] + 0.00002,
+          d.position[2] + 0.05,
+        ],
+        getFillColor: [255, 255, 255, 200],
+        getRadius: 6,
+        radiusUnits: "pixels",
+        pickable: false,
+        opacity: 0.9,
+      })
+    );
+
+    // Text labels with enhanced creative styling (above pin head)
     layers.push(
       new TextLayer({
         id: "route-marker-labels",
         data: markerData,
-        getPosition: (d) => [d.position[0], d.position[1], d.position[2] + 1], // 1m above marker
-        getText: (d) => (d.type === "start" ? "START" : "END"),
-        getSize: 18,
-        sizeMinPixels: 12,
+        getPosition: (d) => [d.position[0], d.position[1], d.position[2] + 1.5],
+        getText: (d) => (d.type === "start" ? "🚀 START" : "🎯 END"),
+        getSize: 22,
+        sizeMinPixels: 16,
         getColor: [255, 255, 255, 255],
         getTextAnchor: "middle",
         getAlignmentBaseline: "center",
-        billboard: true, // Always face camera
+        billboard: true,
         background: true,
-        getBackgroundColor: [0, 0, 0, 180],
-        backgroundPadding: [4, 2],
+        getBackgroundColor: (d) =>
+          d.type === "start" ? [40, 180, 40, 240] : [220, 40, 40, 240],
+        backgroundPadding: [12, 6],
+        fontWeight: "bold",
       })
     );
 
-    // Waypoint markers along the route with proper elevation
+    // Waypoint markers with enhanced creative styling
     if (routePath.length > 2) {
+      const WAYPOINT_ELEVATION_OFFSET = 4.0;
+      const waypoints = routePath.slice(1, -1);
+
+      // Glow for waypoints
       layers.push(
         new ScatterplotLayer({
-          id: "route-waypoints",
-          data: routePath.slice(1, -1),
-          getPosition: (d) => [...d.coords, getFloorElevation(d.floor)],
-          getFillColor: [255, 200, 50, 200],
-          getRadius: 2,
-          radiusMinPixels: 2,
-          radiusMaxPixels: 8,
+          id: "route-waypoints-glow",
+          data: waypoints,
+          getPosition: (d) => {
+            let baseElevation = getFloorElevation(d.floor);
+            if (d.features?.[0]?.properties?.base_height !== undefined) {
+              baseElevation = parseFloat(d.features[0].properties.base_height);
+            } else if (d.features?.[0]?.properties?.base_heigh !== undefined) {
+              baseElevation = parseFloat(d.features[0].properties.base_heigh);
+            }
+            return [
+              ...d.coords,
+              baseElevation + WAYPOINT_ELEVATION_OFFSET - 0.05,
+            ];
+          },
+          getFillColor: [255, 180, 80, 150],
+          getRadius: 14,
+          radiusUnits: "pixels",
           pickable: false,
+          opacity: 0.6,
+        })
+      );
+
+      // Main waypoint markers
+      layers.push(
+        new ScatterplotLayer({
+          id: "route-waypoints-main",
+          data: waypoints,
+          getPosition: (d) => {
+            let baseElevation = getFloorElevation(d.floor);
+            if (d.features?.[0]?.properties?.base_height !== undefined) {
+              baseElevation = parseFloat(d.features[0].properties.base_height);
+            } else if (d.features?.[0]?.properties?.base_heigh !== undefined) {
+              baseElevation = parseFloat(d.features[0].properties.base_heigh);
+            }
+            return [...d.coords, baseElevation + WAYPOINT_ELEVATION_OFFSET];
+          },
+          getFillColor: [255, 200, 100, 255],
+          getRadius: 12,
+          radiusUnits: "pixels",
+          pickable: false,
+          stroked: true,
+          lineWidthMinPixels: 2,
+          getLineColor: [255, 255, 255, 255],
         })
       );
     }

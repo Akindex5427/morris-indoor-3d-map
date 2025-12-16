@@ -253,7 +253,7 @@ const Map3D = ({
     console.log("[Map3D] Rendering route with", routePath.length, "waypoints");
 
     // Create path coordinates using actual room base elevations
-    const PATH_ELEVATION_OFFSET = 2.0; // Raised high above floor like Google Maps
+    const PATH_ELEVATION_OFFSET = 0.5; // Just above floor for clear visibility
     const pathCoords = routePath.map((point) => {
       // Try to get base elevation from room features
       let baseElevation = getFloorElevation(point.floor);
@@ -514,27 +514,6 @@ const Map3D = ({
         radiusUnits: "pixels",
         pickable: false,
         opacity: 0.9,
-      })
-    );
-
-    // Text labels with enhanced creative styling (above pin head)
-    layers.push(
-      new TextLayer({
-        id: "route-marker-labels",
-        data: markerData,
-        getPosition: (d) => [d.position[0], d.position[1], d.position[2] + 1.5],
-        getText: (d) => (d.type === "start" ? "🚀 START" : "🎯 END"),
-        getSize: 22,
-        sizeMinPixels: 16,
-        getColor: [255, 255, 255, 255],
-        getTextAnchor: "middle",
-        getAlignmentBaseline: "center",
-        billboard: true,
-        background: true,
-        getBackgroundColor: (d) =>
-          d.type === "start" ? [40, 180, 40, 240] : [220, 40, 40, 240],
-        backgroundPadding: [12, 6],
-        fontWeight: "bold",
       })
     );
 

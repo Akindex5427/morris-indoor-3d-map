@@ -69,6 +69,20 @@ const isVerticalConnector = (roomName) => {
   );
 };
 
+// Check if room is a corridor/hallway (for routing through)
+const isCorridor = (roomName) => {
+  const name = roomName.toLowerCase();
+  return (
+    name.includes("hall") ||
+    name.includes("corridor") ||
+    name.includes("corredor") ||
+    name.includes("hallway") ||
+    name.includes("lobby") ||
+    name.includes("passage") ||
+    name.includes("passagem")
+  );
+};
+
 // Check if a room is navigable (exclude structural elements)
 const isNavigableRoom = (roomName) => {
   const name = roomName.toLowerCase();
@@ -118,7 +132,7 @@ const groupRoomsByName = (features) => {
   return roomGroups;
 };
 
-// Build adjacency graph for room groups
+// Build adjacency graph with corridor-aware routing
 const buildRoomGraph = (roomGroups, targetFloor = null) => {
   const graph = new Map();
   const rooms = Array.from(roomGroups.values());
@@ -136,29 +150,56 @@ const buildRoomGraph = (roomGroups, targetFloor = null) => {
     `[Pathfinding] Graph building: ${beforeNavFilter} rooms before navigable filter, ${afterNavFilter} after`
   );
 
-  // Build adjacency list
+  // Separate corridors from regular rooms for corridor-aware routing
+  const corridors = filteredRooms.filter((r) => isCorridor(r.name));
+  const regularRooms = filteredRooms.filter((r) => !isCorridor(r.name));
+
+  console.log(
+    `[Pathfinding] Identified ${corridors.length} corridors and ${regularRooms.length} regular rooms`
+  );
+
+  // Build adjacency list with corridor preference
   filteredRooms.forEach((room) => {
     const key = `${room.name}_F${room.floor}`;
     const neighbors = [];
+    const isRoomCorridor = isCorridor(room.name);
 
     // Find neighboring rooms
     filteredRooms.forEach((otherRoom) => {
       if (room.name === otherRoom.name && room.floor === otherRoom.floor) {
         return; // Skip same room
-      } // Rooms on same floor
+      }
+
+      // Rooms on same floor
       if (room.floor === otherRoom.floor) {
         const dist = distance(room.centroid, otherRoom.centroid);
+        const isOtherCorridor = isCorridor(otherRoom.name);
 
-        // Proximity threshold for same floor - VERY LARGE for WGS84 coordinates
-        // Make sure all rooms on same floor can potentially connect
-        const threshold = 0.05; // Increased to connect more rooms on same floor
+        // Different thresholds based on room types
+        let threshold;
+        let distanceWeight = dist;
+
+        if (isRoomCorridor && isOtherCorridor) {
+          // Corridor to corridor - prefer these connections
+          threshold = 0.05;
+          distanceWeight = dist * 0.8; // Lower cost for corridor-to-corridor
+        } else if (isRoomCorridor || isOtherCorridor) {
+          // Room to corridor or corridor to room - allow these
+          threshold = 0.03; // Closer proximity needed
+          distanceWeight = dist * 0.9; // Slight preference
+        } else {
+          // Room to room - only if very close (might be adjacent rooms)
+          threshold = 0.015; // Must be very close
+          distanceWeight = dist * 1.2; // Higher cost for direct room-to-room
+        }
 
         if (dist < threshold && dist > 0) {
           neighbors.push({
             key: `${otherRoom.name}_F${otherRoom.floor}`,
             name: otherRoom.name,
             floor: otherRoom.floor,
-            distance: dist,
+            distance: distanceWeight,
+            isCorridor: isOtherCorridor,
           });
         }
       }
@@ -178,6 +219,7 @@ const buildRoomGraph = (roomGroups, targetFloor = null) => {
               name: otherRoom.name,
               floor: otherRoom.floor,
               distance: dist * 2, // Penalty for floor change
+              isCorridor: isCorridor(otherRoom.name),
             });
           }
         }
@@ -188,6 +230,7 @@ const buildRoomGraph = (roomGroups, targetFloor = null) => {
       room,
       neighbors,
       centroid: room.centroid,
+      isCorridor: isRoomCorridor,
     });
   });
 
@@ -432,10 +475,201 @@ export const findRoute = (rooms, startRoom, endRoom, targetFloor = null) => {
       floor: node.room.floor,
       name: node.room.name,
       features: node.room.features,
+      isCorridor: node.isCorridor,
     };
   });
 
-  return pathCoords;
+  console.log(
+    `[Pathfinding] Raw path: ${pathCoords.map((p) => p.name).join(" -> ")}`
+  );
+
+  // Add corridor waypoints for smoother, more realistic paths
+  const enhancedPath = addCorridorWaypoints(pathCoords);
+
+  console.log(
+    `[Pathfinding] Enhanced path with ${enhancedPath.length} waypoints`
+  );
+
+  return enhancedPath;
+};
+
+// Get boundary points of a room (for corridor edge routing)
+const getRoomBoundaryPoints = (room, targetPoint) => {
+  const coords = [];
+
+  room.features.forEach((feature) => {
+    if (feature.geometry.type === "Polygon") {
+      coords.push(...feature.geometry.coordinates[0]);
+    } else if (feature.geometry.type === "MultiPolygon") {
+      coords.push(...feature.geometry.coordinates[0][0]);
+    } else if (feature.geometry.type === "LineString") {
+      coords.push(...feature.geometry.coordinates);
+    }
+  });
+
+  if (coords.length === 0) return null;
+
+  // Find the point on the boundary closest to the target
+  let closestPoint = coords[0];
+  let minDist = distance(coords[0], targetPoint);
+
+  coords.forEach((coord) => {
+    const dist = distance(coord, targetPoint);
+    if (dist < minDist) {
+      minDist = dist;
+      closestPoint = coord;
+    }
+  });
+
+  return closestPoint;
+};
+
+// Get multiple evenly spaced points along a corridor for smooth routing
+const getCorridorPathPoints = (room, fromPoint, toPoint, numPoints = 2) => {
+  const coords = [];
+
+  room.features.forEach((feature) => {
+    if (feature.geometry.type === "Polygon") {
+      coords.push(...feature.geometry.coordinates[0]);
+    } else if (feature.geometry.type === "MultiPolygon") {
+      coords.push(...feature.geometry.coordinates[0][0]);
+    } else if (feature.geometry.type === "LineString") {
+      coords.push(...feature.geometry.coordinates);
+    }
+  });
+
+  if (coords.length < 3) return [];
+
+  // Calculate corridor "spine" by finding points along the path from entry to exit
+  const entryPoint = getRoomBoundaryPoints(room, fromPoint);
+  const exitPoint = getRoomBoundaryPoints(room, toPoint);
+
+  if (!entryPoint || !exitPoint) return [];
+
+  // Generate intermediate points along the line from entry to exit
+  const waypoints = [];
+  for (let i = 1; i <= numPoints; i++) {
+    const t = i / (numPoints + 1);
+    const interpolated = [
+      entryPoint[0] + (exitPoint[0] - entryPoint[0]) * t,
+      entryPoint[1] + (exitPoint[1] - entryPoint[1]) * t,
+    ];
+    waypoints.push(interpolated);
+  }
+
+  return waypoints;
+};
+
+// Add intermediate waypoints along corridor edges for smoother, more natural paths
+const addCorridorWaypoints = (pathCoords) => {
+  if (pathCoords.length < 2) return pathCoords;
+
+  const enhancedPath = [];
+
+  for (let i = 0; i < pathCoords.length; i++) {
+    const current = pathCoords[i];
+    enhancedPath.push(current);
+
+    // Add intermediate waypoints between rooms if they're far apart
+    if (i < pathCoords.length - 1) {
+      const next = pathCoords[i + 1];
+      const dist = distance(current.coords, next.coords);
+
+      // If distance is significant and involves corridors, add waypoints
+      if (dist > 0.008) {
+        // Lowered threshold for more waypoints
+        const currentIsCorridor = isCorridor(current.name);
+        const nextIsCorridor = isCorridor(next.name);
+
+        // If transitioning to/from corridor, add boundary waypoints
+        if (currentIsCorridor !== nextIsCorridor) {
+          let waypointCoord;
+
+          if (currentIsCorridor) {
+            // Exiting corridor - use point on corridor edge closest to next room
+            waypointCoord = getRoomBoundaryPoints(current, next.coords);
+          } else {
+            // Entering corridor - use point on corridor edge closest to current room
+            waypointCoord = getRoomBoundaryPoints(next, current.coords);
+          }
+
+          if (waypointCoord) {
+            enhancedPath.push({
+              coords: waypointCoord,
+              floor: current.floor,
+              name: currentIsCorridor ? current.name : next.name,
+              features: currentIsCorridor ? current.features : next.features,
+              isWaypoint: true,
+            });
+          }
+        }
+        // If both are corridors and far apart, add multiple waypoints along corridor path
+        else if (currentIsCorridor && nextIsCorridor && dist > 0.015) {
+          // Determine number of waypoints based on distance
+          const numWaypoints = Math.min(Math.floor(dist / 0.01), 5); // Max 5 waypoints
+
+          // Get corridor path points
+          const prevCoords = i > 0 ? pathCoords[i - 1].coords : current.coords;
+          const nextNextCoords =
+            i < pathCoords.length - 2 ? pathCoords[i + 2].coords : next.coords;
+
+          const corridorPoints = getCorridorPathPoints(
+            current,
+            prevCoords,
+            nextNextCoords,
+            numWaypoints
+          );
+
+          if (corridorPoints.length > 0) {
+            corridorPoints.forEach((point) => {
+              enhancedPath.push({
+                coords: point,
+                floor: current.floor,
+                name: current.name,
+                features: current.features,
+                isWaypoint: true,
+              });
+            });
+          } else {
+            // Fallback to simple interpolation
+            for (let j = 1; j <= numWaypoints; j++) {
+              const t = j / (numWaypoints + 1);
+              const interpolated = [
+                current.coords[0] + (next.coords[0] - current.coords[0]) * t,
+                current.coords[1] + (next.coords[1] - current.coords[1]) * t,
+              ];
+              enhancedPath.push({
+                coords: interpolated,
+                floor: current.floor,
+                name: current.name,
+                features: current.features,
+                isWaypoint: true,
+              });
+            }
+          }
+        }
+        // Room to room transitions - add single midpoint if reasonably far
+        else if (!currentIsCorridor && !nextIsCorridor && dist > 0.012) {
+          const midpoint = [
+            (current.coords[0] + next.coords[0]) / 2,
+            (current.coords[1] + next.coords[1]) / 2,
+          ];
+          enhancedPath.push({
+            coords: midpoint,
+            floor: current.floor,
+            name: "transition",
+            features: current.features,
+            isWaypoint: true,
+          });
+        }
+      }
+    }
+  }
+
+  console.log(
+    `[Pathfinding] Enhanced path from ${pathCoords.length} to ${enhancedPath.length} points with corridor waypoints`
+  );
+  return enhancedPath;
 };
 
 // Calculate total route distance

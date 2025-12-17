@@ -524,37 +524,80 @@ const getRoomBoundaryPoints = (room, targetPoint) => {
   return closestPoint;
 };
 
-// Get multiple evenly spaced points along a corridor for smooth routing
-const getCorridorPathPoints = (room, fromPoint, toPoint, numPoints = 2) => {
-  const coords = [];
+// Get edges/boundary segments of a room
+const getRoomEdges = (room) => {
+  const allCoords = [];
 
   room.features.forEach((feature) => {
     if (feature.geometry.type === "Polygon") {
-      coords.push(...feature.geometry.coordinates[0]);
+      allCoords.push(...feature.geometry.coordinates[0]);
     } else if (feature.geometry.type === "MultiPolygon") {
-      coords.push(...feature.geometry.coordinates[0][0]);
+      allCoords.push(...feature.geometry.coordinates[0][0]);
     } else if (feature.geometry.type === "LineString") {
-      coords.push(...feature.geometry.coordinates);
+      allCoords.push(...feature.geometry.coordinates);
     }
   });
 
-  if (coords.length < 3) return [];
+  return allCoords;
+};
 
-  // Calculate corridor "spine" by finding points along the path from entry to exit
+// Get multiple evenly spaced points along a corridor using edge-based routing
+const getCorridorPathPoints = (room, fromPoint, toPoint, numPoints = 2) => {
+  const edges = getRoomEdges(room);
+
+  if (edges.length < 3) return [];
+
+  // Find entry and exit points on corridor boundary
   const entryPoint = getRoomBoundaryPoints(room, fromPoint);
   const exitPoint = getRoomBoundaryPoints(room, toPoint);
 
   if (!entryPoint || !exitPoint) return [];
 
-  // Generate intermediate points along the line from entry to exit
+  // Find indices of entry and exit in edge array
+  let entryIdx = 0;
+  let exitIdx = edges.length - 1;
+  let minEntryDist = Infinity;
+  let minExitDist = Infinity;
+
+  edges.forEach((coord, idx) => {
+    const distToEntry = distance(coord, entryPoint);
+    const distToExit = distance(coord, exitPoint);
+
+    if (distToEntry < minEntryDist) {
+      minEntryDist = distToEntry;
+      entryIdx = idx;
+    }
+    if (distToExit < minExitDist) {
+      minExitDist = distToExit;
+      exitIdx = idx;
+    }
+  });
+
+  // Create waypoints along the edges from entry to exit
   const waypoints = [];
-  for (let i = 1; i <= numPoints; i++) {
-    const t = i / (numPoints + 1);
-    const interpolated = [
-      entryPoint[0] + (exitPoint[0] - entryPoint[0]) * t,
-      entryPoint[1] + (exitPoint[1] - entryPoint[1]) * t,
-    ];
-    waypoints.push(interpolated);
+
+  if (entryIdx === exitIdx) {
+    // Same edge, simple interpolation
+    for (let i = 1; i <= numPoints; i++) {
+      const t = i / (numPoints + 1);
+      waypoints.push([
+        entryPoint[0] + (exitPoint[0] - entryPoint[0]) * t,
+        entryPoint[1] + (exitPoint[1] - entryPoint[1]) * t,
+      ]);
+    }
+  } else {
+    // Follow edges around the corridor boundary
+    const step = Math.ceil(Math.abs(exitIdx - entryIdx) / (numPoints + 1));
+    const direction = exitIdx > entryIdx ? 1 : -1;
+
+    for (let i = 1; i <= numPoints; i++) {
+      const idx = entryIdx + i * step * direction;
+      const boundedIdx = ((idx % edges.length) + edges.length) % edges.length;
+
+      if (edges[boundedIdx]) {
+        waypoints.push(edges[boundedIdx]);
+      }
+    }
   }
 
   return waypoints;
@@ -648,19 +691,48 @@ const addCorridorWaypoints = (pathCoords) => {
             }
           }
         }
-        // Room to room transitions - add single midpoint if reasonably far
-        else if (!currentIsCorridor && !nextIsCorridor && dist > 0.012) {
-          const midpoint = [
-            (current.coords[0] + next.coords[0]) / 2,
-            (current.coords[1] + next.coords[1]) / 2,
-          ];
-          enhancedPath.push({
-            coords: midpoint,
-            floor: current.floor,
-            name: "transition",
-            features: current.features,
-            isWaypoint: true,
-          });
+        // Room to room transitions - create corner-bending waypoints
+        else if (!currentIsCorridor && !nextIsCorridor && dist > 0.008) {
+          // Get boundary points where path enters/exits rooms
+          const currentExit = getRoomBoundaryPoints(current, next.coords);
+          const nextEntry = getRoomBoundaryPoints(next, current.coords);
+
+          if (currentExit && nextEntry) {
+            // Add exit point from current room
+            enhancedPath.push({
+              coords: currentExit,
+              floor: current.floor,
+              name: current.name,
+              features: current.features,
+              isWaypoint: true,
+            });
+
+            // If the points are still far apart, add a midpoint bend
+            const exitToEntryDist = distance(currentExit, nextEntry);
+            if (exitToEntryDist > 0.01) {
+              // Create L-shaped bend (perpendicular waypoint)
+              const midpoint = [
+                currentExit[0] + (nextEntry[0] - currentExit[0]) * 0.5,
+                currentExit[1] + (nextEntry[1] - currentExit[1]) * 0.5,
+              ];
+              enhancedPath.push({
+                coords: midpoint,
+                floor: current.floor,
+                name: "bend",
+                features: current.features,
+                isWaypoint: true,
+              });
+            }
+
+            // Add entry point to next room
+            enhancedPath.push({
+              coords: nextEntry,
+              floor: next.floor,
+              name: next.name,
+              features: next.features,
+              isWaypoint: true,
+            });
+          }
         }
       }
     }

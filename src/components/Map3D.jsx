@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import DeckGL from "@deck.gl/react";
 import Map from "react-map-gl";
-import { PathLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
+import {
+  PathLayer,
+  ScatterplotLayer,
+  TextLayer,
+  IconLayer,
+} from "@deck.gl/layers";
 import { useIndoorBuilding } from "./IndoorBuilding";
 import "mapbox-gl/dist/mapbox-gl.css";
 
@@ -273,34 +278,34 @@ const Map3D = ({
 
     console.log("[Map3D] Route path coordinates:", pathCoords);
 
-    // Bold blue route path like Google Maps (outer border/glow)
+    // Narrower blue route path like Google Maps (outer border)
     layers.push(
       new PathLayer({
         id: "route-path-border",
         data: [{ path: pathCoords }],
         getPath: (d) => d.path,
-        getColor: [30, 80, 180, 200],
-        getWidth: 24,
-        widthMinPixels: 14,
-        widthMaxPixels: 30,
+        getColor: [30, 80, 180, 180],
+        getWidth: 10,
+        widthMinPixels: 7,
+        widthMaxPixels: 14,
         widthScale: 1,
         rounded: true,
         billboard: false,
         pickable: false,
-        opacity: 0.6,
+        opacity: 0.7,
       })
     );
 
-    // Main bold blue path (like Google Maps)
+    // Main bold blue path (like Google Maps) - narrower
     layers.push(
       new PathLayer({
         id: "route-path-main",
         data: [{ path: pathCoords }],
         getPath: (d) => d.path,
         getColor: [66, 133, 244, 255], // Google Maps blue
-        getWidth: 16,
-        widthMinPixels: 10,
-        widthMaxPixels: 20,
+        getWidth: 7,
+        widthMinPixels: 5,
+        widthMaxPixels: 10,
         widthScale: 1,
         rounded: true,
         billboard: false,
@@ -309,7 +314,7 @@ const Map3D = ({
       })
     );
 
-    // Inner highlight for 3D effect
+    // Inner highlight for 3D effect - narrower
     layers.push(
       new PathLayer({
         id: "route-path-highlight",
@@ -319,15 +324,15 @@ const Map3D = ({
           },
         ],
         getPath: (d) => d.path,
-        getColor: [130, 180, 255, 180],
-        getWidth: 8,
-        widthMinPixels: 5,
-        widthMaxPixels: 12,
+        getColor: [130, 180, 255, 150],
+        getWidth: 3,
+        widthMinPixels: 2,
+        widthMaxPixels: 5,
         widthScale: 1,
         rounded: true,
         billboard: false,
         pickable: false,
-        opacity: 0.8,
+        opacity: 0.6,
       })
     );
 
@@ -388,132 +393,49 @@ const Map3D = ({
       markerData[1].position[2]
     );
 
-    // PIN DESIGN: Base glow at floor level (where pin touches ground)
-    layers.push(
-      new ScatterplotLayer({
-        id: "route-pin-base-glow",
-        data: markerData,
-        getPosition: (d) => [
-          d.position[0],
-          d.position[1],
-          d.position[2] - 4.0, // At floor level
-        ],
-        getFillColor: (d) =>
-          d.type === "start" ? [80, 255, 80, 120] : [255, 80, 80, 120],
-        getRadius: 20,
-        radiusUnits: "pixels",
-        pickable: false,
-        opacity: 0.5,
-      })
-    );
+    // Google Maps-style location pin markers using IconLayer
+    // Create SVG data URLs for green and red pins
+    const createPinSVG = (color) => {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 48 48">
+        <defs>
+          <filter id="shadow">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+          </filter>
+        </defs>
+        <path d="M24 2C15.2 2 8 9.2 8 18c0 10.5 14 26 16 28 2-2 16-17.5 16-28 0-8.8-7.2-16-16-16zm0 22c-3.3 0-6-2.7-6-6s2.7-6 6-6 6 2.7 6 6-2.7 6-6 6z" 
+              fill="${color}" filter="url(#shadow)"/>
+        <circle cx="24" cy="18" r="5" fill="white" opacity="0.9"/>
+      </svg>`;
+      return `data:image/svg+xml;base64,${btoa(svg)}`;
+    };
 
-    // PIN: Pointed base (bottom of pin)
-    layers.push(
-      new ScatterplotLayer({
-        id: "route-pin-point",
-        data: markerData,
-        getPosition: (d) => [d.position[0], d.position[1], d.position[2] - 3.8],
-        getFillColor: (d) =>
-          d.type === "start" ? [60, 200, 60, 255] : [200, 60, 60, 255],
-        getRadius: 6,
-        radiusUnits: "pixels",
-        pickable: false,
-        opacity: 1.0,
-      })
-    );
-
-    // PIN: Stem/shaft (middle part connecting to head)
-    layers.push(
-      new ScatterplotLayer({
-        id: "route-pin-stem-bottom",
-        data: markerData,
-        getPosition: (d) => [d.position[0], d.position[1], d.position[2] - 3.0],
-        getFillColor: (d) =>
-          d.type === "start" ? [70, 220, 70, 255] : [220, 70, 70, 255],
-        getRadius: 4,
-        radiusUnits: "pixels",
-        pickable: false,
-        opacity: 1.0,
-      })
-    );
+    const pinMapping = {
+      start: {
+        url: createPinSVG("#34A853"), // Google green
+        width: 36,
+        height: 36,
+        anchorY: 36,
+      },
+      end: {
+        url: createPinSVG("#EA4335"), // Google red
+        width: 36,
+        height: 36,
+        anchorY: 36,
+      },
+    };
 
     layers.push(
-      new ScatterplotLayer({
-        id: "route-pin-stem-mid",
-        data: markerData,
-        getPosition: (d) => [d.position[0], d.position[1], d.position[2] - 2.0],
-        getFillColor: (d) =>
-          d.type === "start" ? [70, 220, 70, 255] : [220, 70, 70, 255],
-        getRadius: 4,
-        radiusUnits: "pixels",
-        pickable: false,
-        opacity: 1.0,
-      })
-    );
-
-    layers.push(
-      new ScatterplotLayer({
-        id: "route-pin-stem-top",
-        data: markerData,
-        getPosition: (d) => [d.position[0], d.position[1], d.position[2] - 1.0],
-        getFillColor: (d) =>
-          d.type === "start" ? [70, 220, 70, 255] : [220, 70, 70, 255],
-        getRadius: 4,
-        radiusUnits: "pixels",
-        pickable: false,
-        opacity: 1.0,
-      })
-    );
-
-    // PIN: Head glow (outer ring around head)
-    layers.push(
-      new ScatterplotLayer({
-        id: "route-pin-head-glow",
+      new IconLayer({
+        id: "route-pin-markers",
         data: markerData,
         getPosition: (d) => d.position,
-        getFillColor: (d) =>
-          d.type === "start" ? [80, 255, 80, 100] : [255, 80, 80, 100],
-        getRadius: 22,
-        radiusUnits: "pixels",
-        pickable: false,
-        opacity: 0.6,
-      })
-    );
-
-    // PIN: Main head (circular top of pin)
-    layers.push(
-      new ScatterplotLayer({
-        id: "route-pin-head",
-        data: markerData,
-        getPosition: (d) => d.position,
-        getFillColor: (d) =>
-          d.type === "start" ? [80, 255, 80, 255] : [255, 80, 80, 255],
-        getRadius: 16,
-        radiusUnits: "pixels",
+        getIcon: (d) => pinMapping[d.type],
+        getSize: 36,
+        sizeUnits: "pixels",
+        sizeScale: 1,
         pickable: true,
-        stroked: true,
-        filled: true,
-        lineWidthMinPixels: 2,
-        getLineColor: [255, 255, 255, 255],
+        billboard: true,
         opacity: 1.0,
-      })
-    );
-
-    // PIN: Head highlight (glossy effect on top)
-    layers.push(
-      new ScatterplotLayer({
-        id: "route-pin-head-highlight",
-        data: markerData,
-        getPosition: (d) => [
-          d.position[0] - 0.00002,
-          d.position[1] + 0.00002,
-          d.position[2] + 0.05,
-        ],
-        getFillColor: [255, 255, 255, 200],
-        getRadius: 6,
-        radiusUnits: "pixels",
-        pickable: false,
-        opacity: 0.9,
       })
     );
 

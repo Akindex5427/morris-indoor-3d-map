@@ -254,7 +254,7 @@ function applyBaseToGeometry(geometry, baseZ = 0) {
 // ============================================================================
 
 const IndoorBuilding = ({
-  dataUrl = "/rooms-all-WGS.geojson",
+  dataUrl = "/rooms-all-WGS-v6.geojson",
   selectedFloors = [0, 1, 2, 3, 4, 5, 6, 7],
   translucency = 0.6,
   heightExaggeration = 1.0,

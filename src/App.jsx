@@ -149,7 +149,7 @@ function App() {
     5: "/rooms-level-5-WGS.geojson",
     6: "/rooms-level-6-WGS.geojson",
     7: "/rooms-level-7-WGS.geojson",
-    all: "/rooms-all-WGS.geojson",
+    all: "/rooms-all-WGS-v6.geojson",
   };
 
   // Line overlays are optional - removed since we're using polygons now

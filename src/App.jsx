@@ -12,6 +12,7 @@ import Legend from "./components/Legend";
 import RoutePlanner from "./components/RoutePlanner";
 import LoadingSpinner from "./components/LoadingSpinner";
 import HelpOverlay from "./components/HelpOverlay";
+import DirectionsPanel from "./components/DirectionsPanel";
 import { findRoute, calculateRouteDistance } from "./utils/pathfinding";
 
 function App() {
@@ -42,6 +43,8 @@ function App() {
   const [darkMode, setDarkMode] = useState(false);
   const [hoveredRoomId, setHoveredRoomId] = useState(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [showDirections, setShowDirections] = useState(true);
+  const [highlightedStep, setHighlightedStep] = useState(null);
 
   // Apply dark mode to body
   useEffect(() => {
@@ -96,6 +99,7 @@ function App() {
           setShowFilterPanel(false);
           setShowRoutePlanner(false);
           setSelectedRoom(null);
+          setShowDirections(false);
           break;
         case "arrowup":
           setViewState((prev) => ({
@@ -395,6 +399,7 @@ function App() {
     if (!startRoom || !endRoom) {
       setRoutePath(null);
       setRouteInfo(null);
+      setShowDirections(false);
       return;
     }
 
@@ -412,16 +417,37 @@ function App() {
           targetFloor: targetFloor,
         });
         setShowRoutePlanner(false);
+        setShowDirections(true);
       } else {
         alert("No route found between these rooms. They may not be connected.");
         setRoutePath(null);
         setRouteInfo(null);
+        setShowDirections(false);
       }
     } catch (error) {
       console.error("Error calculating route:", error);
       alert("An error occurred while calculating the route. Please try again.");
       setRoutePath(null);
       setRouteInfo(null);
+      setShowDirections(false);
+    }
+  };
+
+  const handleStepClick = (step) => {
+    // Highlight the step location on the map
+    setHighlightedStep(step);
+
+    // Animate camera to step location
+    if (step && step.coords) {
+      setViewState((prev) => ({
+        ...prev,
+        longitude: step.coords[0],
+        latitude: step.coords[1],
+        zoom: 19.5,
+        pitch: 50,
+        transitionDuration: 800,
+        transitionInterpolator: new FlyToInterpolator(),
+      }));
     }
   };
 
@@ -520,20 +546,38 @@ function App() {
                     Distance: ~{routeInfo.distance}m<br />
                     Floors: {routeInfo.floors.join(", ")}
                   </div>
-                  <button
-                    className="btn-secondary"
+                  <div
                     style={{
                       marginTop: "0.6rem",
-                      width: "100%",
-                      padding: "0.5rem",
-                    }}
-                    onClick={() => {
-                      setRoutePath(null);
-                      setRouteInfo(null);
+                      display: "flex",
+                      gap: "0.5rem",
                     }}
                   >
-                    Clear Route
-                  </button>
+                    <button
+                      className="btn-secondary"
+                      style={{
+                        flex: 1,
+                        padding: "0.5rem",
+                      }}
+                      onClick={() => setShowDirections(!showDirections)}
+                    >
+                      {showDirections ? "Hide" : "Show"} Directions
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      style={{
+                        flex: 1,
+                        padding: "0.5rem",
+                      }}
+                      onClick={() => {
+                        setRoutePath(null);
+                        setRouteInfo(null);
+                        setShowDirections(false);
+                      }}
+                    >
+                      Clear Route
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -626,6 +670,20 @@ function App() {
                 onRouteCalculate={handleRouteCalculate}
                 onClose={() => setShowRoutePlanner(false)}
                 selectedFloors={selectedFloors}
+              />
+            )}
+
+            {/* Directions Panel */}
+            {showDirections && routePath && (
+              <DirectionsPanel
+                routePath={routePath}
+                routeInfo={routeInfo}
+                onClose={() => {
+                  setShowDirections(false);
+                  setRoutePath(null);
+                  setRouteInfo(null);
+                }}
+                onStepClick={handleStepClick}
               />
             )}
           </div>
